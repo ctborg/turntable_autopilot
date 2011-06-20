@@ -73,6 +73,18 @@ TT.autoUpvoteLoop = function() {
   }
 };
 
+// skip my song after a certain time
+TT.autoSkipLoop = function(t) {
+  while(1) {
+    TT.waitforEvent("soundstart", function(m) { 
+      return m.sID.indexOf("_")!=-1 && 
+        turntable.topViewController.currentDj == turntable.user.id; });   
+    hold(t);     
+    TT.request({api:"room.stop_song", 
+                roomid:  turntable.topViewController.roomId});
+  }
+};
+
 //----------------------------------------------------------------------
 // Main 
 
@@ -89,4 +101,7 @@ waitfor {
 }
 and {
   TT.autoUpvoteLoop();
+}
+and {
+  TT.autoSkipLoop(30000);
 }
