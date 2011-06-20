@@ -1,44 +1,41 @@
-var c = require('apollo:debug').console();
-turntable.eventListeners.message.unshift(function(m) { c.log(m.command); });
-//turntable.eventListeners.soundstart.unshift(function(m) { c.log(m); });
+// Turntable Autopilot Chrome Extension
+// See https://github.com/onilabs/turntable_autopilot
+//
+
 //----------------------------------------------------------------------
-// Turntable API abstraction
+// Turntable API
 
 var TT = {};
 
+TT.log = function() {};
+// uncomment for debugging
+var c = require('apollo:debug').console(); TT.log = function(m) { c.log(m);};
+//turntable.eventListeners.message.unshift(function(m) { c.log(m); });
+//turntable.eventListeners.soundstart.unshift(function(m) { c.log(m); });
+
+
 // make an API request; wait for reply
 TT.request = function(message) {
-  waitfor(var rv) {
-    turntable.sendMessage(message, resume);
-  }
+  waitfor(var rv) { turntable.sendMessage(message, resume); }
   return rv;
 };
 
 // wait for a particular event
 TT.waitforEvent = function(event, filter) {
   waitfor(var rv) {
-    function handler(message) { 
-      if (filter && !filter(message)) return;
-      resume(message);
-    }
+    function handler(message) { if (!filter || filter(message)) resume(message); }
     // there is a bug in turntable.dispatchEvent (missing 'var'!!) which means that
     // messages can get overwritten by event handlers. To avoid that, we insert at the
     // beginning of the array:
     turntable.eventListeners[event].unshift(handler);
   }
   finally { turntable.removeEventListener(event, handler); }
+  return rv;
 };
 
 // wait until a particular command message is received
-TT.waitforMessage = function(command) {
-  waitfor(var rv) {
-    function handler(message) { if (message.command == command) resume(message); }
-    // there is a bug in turntable.dispatchEvent (missing 'var'!!) which means that
-    // messages can get overwritten by event handlers. To avoid that, we insert at the
-    // beginning of the array:
-    turntable.eventListeners.message.unshift(handler);
-  }
-  finally { turntable.removeEventListener("message", handler); }
+TT.waitforMessage = function(command) { 
+  return TT.waitforEvent('message', function(m) { return m.command == command; });
 };
 
 // grab a dj slot (waiting until one becomes available)
@@ -47,16 +44,40 @@ TT.grabNextDJSlot = function() {
     // wait until slot available:
     while (turntable.topViewController.djIds.length >= 
            turntable.topViewController.maxDjs) {
-      c.log('wait for dj to step down');
       TT.waitforMessage("rem_dj");
+      // give state change a chance to filter through to turntable ui:
+      hold(0);
     }
-    // try to grab it:
+    // try to grab slot:
     TT.request({api:"room.add_dj", roomid: turntable.topViewController.roomId});
   }
 };
 
+// get the current song 
+TT.getCurrentSong = function() {
+  return turntable.topViewController.currentSong;
+};
+
+// is my song currently playing?
+TT.mySongPlaying = function() {
+  return turntable.topViewController.currentDj == turntable.user.id;
+};
+
+// wait until next song is playing
+// whos = 'mine'|'others'|'anyones' (default: 'anyones')
+TT.waitforNextSong = function(whos) {
+  TT.waitforEvent("soundstart", function(m) {
+    if (m.sID.indexOf("_")==-1) return false; //wrong event type
+    if (whos == 'mine') return TT.mySongPlaying();
+    if (whos == 'others') return !TT.mySongPlaying();
+    return true; // anyones
+  });
+  return TT.getCurrentSong();
+}
+
 // upvote the current song
 TT.upvote = function() {
+  if (TT.mySongPlaying()) return; // can't upvote self
   TT.request({api:"room.vote", 
               roomid: turntable.topViewController.roomId, 
               val: "up", 
@@ -69,7 +90,7 @@ TT.upvote = function() {
 TT.autoUpvoteLoop = function() {
   while(1) {
     try { TT.upvote(); } catch(e) { /* ignore */ }
-    TT.waitforEvent("soundstart", function(m) { return m.sID.indexOf("_")!=-1; });
+    TT.waitforNextSong('others');
     // give turntable a chance to register song
     hold(1000);
   }
@@ -78,35 +99,111 @@ TT.autoUpvoteLoop = function() {
 // skip my song after a certain time
 TT.autoSkipLoop = function(t) {
   while(1) {
-    TT.waitforEvent("soundstart", function(m) { 
-      return m.sID.indexOf("_")!=-1 && 
-        turntable.topViewController.currentDj == turntable.user.id; });   
-    hold(t);     
-    TT.request({api:"room.stop_song", 
-                roomid:  turntable.topViewController.roomId});
+    TT.waitforNextSong('mine');
+    waitfor {
+      hold(t);     
+      TT.request({api:"room.stop_song", 
+                  roomid:  turntable.topViewController.roomId});
+    }
+    or {
+      TT.waitforEvent("soundfinish");
+    }
   }
 };
 
 //----------------------------------------------------------------------
+// Last.fm API 
+
+var lastFMKey = "b25b959554ed76058ac220b7b2e0a026"; // XXX don't use demo key
+
+TT.getSimilarLastFmTracks = function(artist, track) {
+  var rv = require('apollo:http').jsonp(
+    ['http://ws.audioscrobbler.com/2.0/',
+     {
+       api_key: lastFMKey,
+       format: "json",
+       method: "track.getsimilar",
+       artist: artist,
+       track: track,
+       autocorrect: 1,
+       limit: 20
+     }
+    ]);
+  if (!rv || !rv.similartracks || !rv.similartracks.track ||
+      typeof rv.similartracks.track == "string") 
+    return null;
+  return rv.similartracks.track;
+}
+
+//----------------------------------------------------------------------
 // Main 
 
+// wait until we're registered:
 TT.waitforMessage("registered");
 
-waitfor {
-  while (1) {
-    waitfor {
-      TT.grabNextDJSlot();
-      hold();
-    }
-    or {
-      TT.waitforMessage("registered");
-      // we entered a new room; go round loop again to grab sj slot when avail
-    }
+// insert our ui:
+var menubutton = document.createElement('div');
+menubutton.setAttribute('class', 'menuItem');
+var menu = document.getElementById('menuh');
+menu.insertBefore(menubutton, menu.firstChild.nextSibling);
+
+// top-level loop:
+while (1) {
+  menubutton.textContent="Start Autopilot";
+  require('apollo:dom').waitforEvent(menubutton, 'click');
+  menubutton.textContent="Stop Autopilot";
+  waitfor {
+    autopilotLoop();
+  }
+  or {
+    require('apollo:dom').waitforEvent(menubutton, 'click');
   }
 }
-and {
-  TT.autoUpvoteLoop();
-}
-and {
-  TT.autoSkipLoop(50000);
+
+function autopilotLoop() {
+  waitfor {
+    while (1) {
+      waitfor {
+        TT.grabNextDJSlot();
+        hold();
+      }
+      or {
+        TT.waitforMessage("registered");
+        // we entered a new room; go round loop again to grab sj slot when avail
+      }
+    }
+  }
+  and {
+    // automatically upvote other djs. we're no hater.
+    TT.autoUpvoteLoop();
+  }
+  and {
+    while (1) {
+      var song = TT.waitforNextSong('others').metadata;
+      TT.log(song.artist+ " -- " + song.song);
+      var similar = TT.getSimilarLastFmTracks(song.artist,song.song);
+      if (!similar) {
+        TT.log("Error getting similar tracks");
+        continue;
+      }
+      TT.log(similar);
+      while (similar.length) {
+        // select a random track:
+        var track = similar.splice(Math.floor(similar.length*Math.random()), 1)[0];
+        TT.log("Similar:"+track.artist.name+": "+track.name);
+        
+        // search for the track on turntable:
+        TT.request({api:'file.search',query:track.artist.name+" "+track.name});
+        var found = TT.waitforMessage('search_complete');
+        if (!found || !found.docs || !found.docs.length) {
+          TT.log('not found on tt');
+          continue;
+        }
+        found = found.docs[0];
+        TT.log(found);
+        turntable.playlist.addSong({fileId: found._id, metadata: found.metadata},0);
+        break;
+      }
+    }
+  }
 }
