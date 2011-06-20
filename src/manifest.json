@@ -1,0 +1,14 @@
+
+{
+  "name": "turntable autopilot",
+  "description": "",
+  "icons": { "128": "128.png" },
+  "version": "1",
+  "content_scripts": [
+    {
+      "matches": ["http://turntable.fm/*"],
+      "js": ["loader.js"]
+    }
+  ],
+  "background_page":"background.html"
+}

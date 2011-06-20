@@ -1,0 +1,24 @@
+<html>
+  <head>
+    <script>
+      function fetchResource(url, callback) {
+        var xhr = new XMLHttpRequest();
+        xhr.onreadystatechange = function() {
+          if (xhr.readyState != 4) return;
+          callback(xhr.responseText);
+        };
+        xhr.open('GET', url);
+        xhr.send();
+      }
+
+      // wire up resource fetcher:
+      function onRequest(request, sender, callback) {
+        if (request.action == "fetchResource")
+          fetchResource(request.url, callback);
+      }
+      chrome.extension.onRequest.addListener(onRequest);
+    </script>
+  </head>
+  <body>
+  </body>
+</html>
