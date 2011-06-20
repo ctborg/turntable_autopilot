@@ -1,6 +1,6 @@
 var c = require('apollo:debug').console();
 turntable.eventListeners.message.unshift(function(m) { c.log(m.command); });
-turntable.eventListeners.soundstart.unshift(function(m) { c.log(m); });
+//turntable.eventListeners.soundstart.unshift(function(m) { c.log(m); });
 //----------------------------------------------------------------------
 // Turntable API abstraction
 
@@ -46,8 +46,10 @@ TT.grabNextDJSlot = function() {
   while (!turntable.topViewController.isDj()) {
     // wait until slot available:
     while (turntable.topViewController.djIds.length >= 
-           turntable.topViewController.maxDjs)
+           turntable.topViewController.maxDjs) {
+      c.log('wait for dj to step down');
       TT.waitforMessage("rem_dj");
+    }
     // try to grab it:
     TT.request({api:"room.add_dj", roomid: turntable.topViewController.roomId});
   }
@@ -92,16 +94,19 @@ TT.waitforMessage("registered");
 
 waitfor {
   while (1) {
-    TT.grabNextDJSlot();
-    TT.waitforMessage("registered");
-    // we entered a new room; go round loop again to grab sj slot when avail
-    // ... but first give room a chance to update state:
-    hold(1000);
+    waitfor {
+      TT.grabNextDJSlot();
+      hold();
+    }
+    or {
+      TT.waitforMessage("registered");
+      // we entered a new room; go round loop again to grab sj slot when avail
+    }
   }
 }
 and {
   TT.autoUpvoteLoop();
 }
 and {
-  TT.autoSkipLoop(30000);
+  TT.autoSkipLoop(50000);
 }
