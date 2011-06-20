@@ -80,14 +80,9 @@ TT.waitforMessage("registered");
 
 waitfor {
   while (1) {
-    waitfor {
-      TT.grabNextDJSlot();
-      hold();
-    }
-    or {
-      TT.waitforMessage("registered");
-      // we entered a new room; go round loop again to grab sj slot when avail
-    }
+    TT.grabNextDJSlot();
+    TT.waitforMessage("registered");
+    // we entered a new room; go round loop again to grab sj slot when avail
   }
 }
 and {
