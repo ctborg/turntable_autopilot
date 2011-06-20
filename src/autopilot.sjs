@@ -83,6 +83,8 @@ waitfor {
     TT.grabNextDJSlot();
     TT.waitforMessage("registered");
     // we entered a new room; go round loop again to grab sj slot when avail
+    // ... but first give room a chance to update state:
+    hold(1000);
   }
 }
 and {
