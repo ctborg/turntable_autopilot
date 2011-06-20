@@ -67,7 +67,6 @@ TT.upvote = function() {
 TT.autoUpvoteLoop = function() {
   while(1) {
     try { TT.upvote(); } catch(e) { /* ignore */ }
-//    TT.waitforMessage("newsong");
     TT.waitforEvent("soundstart", function(m) { return m.sID.indexOf("_")!=-1; });
     // give turntable a chance to register song
     hold(1000);
@@ -78,5 +77,19 @@ TT.autoUpvoteLoop = function() {
 // Main 
 
 TT.waitforMessage("registered");
-TT.grabNextDJSlot();
-TT.autoUpvoteLoop();
+
+waitfor {
+  while (1) {
+    waitfor {
+      TT.grabNextDJSlot();
+      hold();
+    }
+    or {
+      TT.waitforMessage("registered");
+      // we entered a new room; go round loop again to grab sj slot when avail
+    }
+  }
+}
+and {
+  TT.autoUpvoteLoop();
+}
