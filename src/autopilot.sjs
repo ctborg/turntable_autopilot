@@ -169,8 +169,15 @@ TT.fillPlaylistLoop = function() {
   while (1) {
     TT.log(song.artist+ " -- " + song.song);
     // we try similar tracks first; then top tracks by the given artist:
-    var similar = TT.getSimilarLastFmTracks(song.artist,song.song) || 
-      TT.getTopLastFmArtistTracks(song.artist);
+    var similar = null;
+    waitfor {
+      similar = TT.getSimilarLastFmTracks(song.artist,song.song) || 
+        TT.getTopLastFmArtistTracks(song.artist);
+    }
+    or {
+      hold(10000); // time out after 10s
+      TT.log('timeout searching last.fm');
+    }
     if (similar) {
       TT.log(similar);
       // Ok, got a list of similar tracks; now go through the list randomly and see
@@ -180,8 +187,15 @@ TT.fillPlaylistLoop = function() {
         TT.log("Similar:"+track.artist.name+": "+track.name);
         
         // search for the track on turntable:
-        TT.request({api:'file.search',query:track.artist.name+" "+track.name});
-        var found = TT.waitforMessage('search_complete');
+        var found = null;
+        waitfor {
+          TT.request({api:'file.search',query:track.artist.name+" "+track.name});
+          found = TT.waitforMessage('search_complete');
+        }
+        or {
+          hold(10000); // time out after 10s
+          TT.log('timeout searching for track on tt');
+        }
         if (!found || !found.docs || !found.docs.length) {
           TT.log('not found on tt');
           // try next one
@@ -189,7 +203,7 @@ TT.fillPlaylistLoop = function() {
         }
         // ok, we found the track on turntable; add it to the top of the playlist
         found = found.docs[0];
-        TT.log(found);
+        TT.log("found on tt:"+found.metadata.song);
         turntable.playlist.addSong({fileId: found._id, metadata: found.metadata},0);
         break;
       }
