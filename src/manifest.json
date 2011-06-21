@@ -1,7 +1,7 @@
 
 {
   "name": "turntable autopilot",
-  "description": "",
+  "description": "Autopilot mode for turntable.fm",
   "icons": { "128": "128.png" },
   "version": "1",
   "content_scripts": [
