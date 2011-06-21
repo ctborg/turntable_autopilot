@@ -11,7 +11,7 @@ TT.log = function() {};
 // uncomment for debugging
 var c = require('apollo:debug').console(); TT.log = function(m) { c.log(m);};
 //turntable.eventListeners.message.unshift(function(m) { c.log(m); });
-//turntable.eventListeners.soundstart.unshift(function(m) { c.log(m); });
+turntable.eventListeners.soundstart.unshift(function(m) { c.log('playing:'+m.sID); });
 
 
 // make an API request; wait for reply
@@ -67,7 +67,9 @@ TT.mySongPlaying = function() {
 // whos = 'mine'|'others'|'anyones' (default: 'anyones')
 TT.waitforNextSong = function(whos) {
   TT.waitforEvent("soundstart", function(m) {
-    if (m.sID.indexOf("_")==-1) return false; //wrong event type
+    if (m.sID.indexOf("_") == -1 || 
+        m.sID.indexOf("preview") != -1)
+      return false; // not a dj'ed song (a preview or something)
     if (whos == 'mine') return TT.mySongPlaying();
     if (whos == 'others') return !TT.mySongPlaying();
     return true; // anyones
@@ -85,6 +87,55 @@ TT.upvote = function() {
               th:$.sha1(Math.random() + ""), 
               ph:$.sha1(Math.random() + "")});
 };
+
+//----------------------------------------------------------------------
+// Last.fm API 
+
+var lastFMKey = "b25b959554ed76058ac220b7b2e0a026"; // XXX don't use demo key
+var lastFMApi = "http://ws.audioscrobbler.com/2.0/";
+
+// get similar tracks to the current artist:track from Last.fm
+TT.getSimilarLastFmTracks = function(artist, track) {
+  var rv = require('apollo:http').jsonp(
+    [lastFMApi,
+     {
+       api_key: lastFMKey,
+       format: "json",
+       method: "track.getsimilar",
+       artist: artist,
+       track: track,
+       autocorrect: 1,
+       limit: 20
+     }
+    ]);
+  if (!rv || !rv.similartracks || !rv.similartracks.track ||
+      typeof rv.similartracks.track == "string") 
+    return null;
+  TT.log('getSimilarLastFmTracks successful');
+  return rv.similartracks.track;
+}
+
+// get top tracks for the given artist
+TT.getTopLastFmArtistTracks = function(artist) {
+  var rv = require('apollo:http').jsonp(
+    [lastFMApi,
+     {
+       api_key: lastFMKey,
+       format: "json",
+       method: "artist.getTopTracks",
+       artist: artist,
+       autocorrect: 1,
+       limit: 20
+     }
+    ]);
+  if (!rv || !rv.toptracks || !rv.toptracks.track ||
+      typeof rv.toptracks.track == "string") 
+    return null;
+  TT.log('getTopLastFmArtistTracks successful');
+  return rv.toptracks.track;
+};
+
+//----------------------------------------------------------------------
 
 // continually upvote
 TT.autoUpvoteLoop = function() {
@@ -111,28 +162,44 @@ TT.autoSkipLoop = function(t) {
   }
 };
 
-//----------------------------------------------------------------------
-// Last.fm API 
+// whenever someone plays a song, try to add a similar song to our playlist:
+TT.fillPlaylistLoop = function() {
+  var song = ((!TT.mySongPlaying() && TT.getCurrentSong()) || 
+              TT.waitforNextSong('others')).metadata;
+  while (1) {
+    TT.log(song.artist+ " -- " + song.song);
+    // we try similar tracks first; then top tracks by the given artist:
+    var similar = TT.getSimilarLastFmTracks(song.artist,song.song) || 
+      TT.getTopLastFmArtistTracks(song.artist);
+    if (similar) {
+      TT.log(similar);
+      // Ok, got a list of similar tracks; now go through the list randomly and see
+      // if we can find one on turntable.fm:
+      while (similar.length) {
+        var track = similar.splice(Math.floor(similar.length*Math.random()), 1)[0];
+        TT.log("Similar:"+track.artist.name+": "+track.name);
+        
+        // search for the track on turntable:
+        TT.request({api:'file.search',query:track.artist.name+" "+track.name});
+        var found = TT.waitforMessage('search_complete');
+        if (!found || !found.docs || !found.docs.length) {
+          TT.log('not found on tt');
+          // try next one
+          continue;
+        }
+        // ok, we found the track on turntable; add it to the top of the playlist
+        found = found.docs[0];
+        TT.log(found);
+        turntable.playlist.addSong({fileId: found._id, metadata: found.metadata},0);
+        break;
+      }
+    }
+    else
+      TT.log("Error getting similar tracks");
 
-var lastFMKey = "b25b959554ed76058ac220b7b2e0a026"; // XXX don't use demo key
-
-TT.getSimilarLastFmTracks = function(artist, track) {
-  var rv = require('apollo:http').jsonp(
-    ['http://ws.audioscrobbler.com/2.0/',
-     {
-       api_key: lastFMKey,
-       format: "json",
-       method: "track.getsimilar",
-       artist: artist,
-       track: track,
-       autocorrect: 1,
-       limit: 20
-     }
-    ]);
-  if (!rv || !rv.similartracks || !rv.similartracks.track ||
-      typeof rv.similartracks.track == "string") 
-    return null;
-  return rv.similartracks.track;
+    // wait for next song:
+    song = TT.waitforNextSong('others').metadata;
+  }
 }
 
 //----------------------------------------------------------------------
@@ -178,32 +245,6 @@ function autopilotLoop() {
     TT.autoUpvoteLoop();
   }
   and {
-    while (1) {
-      var song = TT.waitforNextSong('others').metadata;
-      TT.log(song.artist+ " -- " + song.song);
-      var similar = TT.getSimilarLastFmTracks(song.artist,song.song);
-      if (!similar) {
-        TT.log("Error getting similar tracks");
-        continue;
-      }
-      TT.log(similar);
-      while (similar.length) {
-        // select a random track:
-        var track = similar.splice(Math.floor(similar.length*Math.random()), 1)[0];
-        TT.log("Similar:"+track.artist.name+": "+track.name);
-        
-        // search for the track on turntable:
-        TT.request({api:'file.search',query:track.artist.name+" "+track.name});
-        var found = TT.waitforMessage('search_complete');
-        if (!found || !found.docs || !found.docs.length) {
-          TT.log('not found on tt');
-          continue;
-        }
-        found = found.docs[0];
-        TT.log(found);
-        turntable.playlist.addSong({fileId: found._id, metadata: found.metadata},0);
-        break;
-      }
-    }
+    TT.fillPlaylistLoop();
   }
 }
