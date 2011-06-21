@@ -9,4 +9,14 @@ When enabled, autopilot mode does the following:
 - Adds music to your playlist based on what others are playing (uses the last.fm api).
 - Automatically upvotes songs played by others.
 
+Installation
+------------
+
+Either run as an unpacked chrome extension from src/, or install it from the Google Chrome Web Store, [here](https://chrome.google.com/webstore/detail/nnldmhlcgdkhgbnekldmppjoffikbclm).
+
+Details
+-------
+
 For the main program logic, see src/autopilot.sjs ([Stratified JavaScript](http://onilabs.com/stratifiedjs) code).
+
+Consider the code in the public domain. Happy hacking.
