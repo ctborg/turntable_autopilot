@@ -1,6 +1,8 @@
 // Turntable Autopilot Chrome Extension
 // See https://github.com/onilabs/turntable_autopilot
-//
+// 
+// The code in this file is *Stratified* JavaScript code; see
+// http://onilabs.com/stratifiedjs
 
 //----------------------------------------------------------------------
 // Turntable API
@@ -9,9 +11,9 @@ var TT = {};
 
 TT.log = function() {};
 // uncomment for debugging
-var c = require('apollo:debug').console(); TT.log = function(m) { c.log(m);};
+//var c = require('apollo:debug').console(); TT.log = function(m) { c.log(m);};
 //turntable.eventListeners.message.unshift(function(m) { c.log(m); });
-turntable.eventListeners.soundstart.unshift(function(m) { c.log('playing:'+m.sID); });
+//turntable.eventListeners.soundstart.unshift(function(m) { c.log('playing:'+m.sID); });
 
 
 // make an API request; wait for reply
@@ -136,6 +138,7 @@ TT.getTopLastFmArtistTracks = function(artist) {
 };
 
 //----------------------------------------------------------------------
+// high-level helpers:
 
 // continually upvote
 TT.autoUpvoteLoop = function() {
@@ -216,6 +219,30 @@ TT.fillPlaylistLoop = function() {
   }
 }
 
+// combined upvoting, dj spot-grabbing, playlist filling:
+function autopilotLoop() {
+  waitfor {
+    while (1) {
+      waitfor {
+        TT.grabNextDJSlot();
+        hold();
+      }
+      or {
+        TT.waitforMessage("registered");
+        // we entered a new room; go round loop again to grab sj slot when avail
+      }
+    }
+  }
+  and {
+    // automatically upvote other djs. we're no haterz.
+    TT.autoUpvoteLoop();
+  }
+  and {
+    // automatically add songs similar to those being played
+    TT.fillPlaylistLoop();
+  }
+}
+
 //----------------------------------------------------------------------
 // Main 
 
@@ -241,24 +268,3 @@ while (1) {
   }
 }
 
-function autopilotLoop() {
-  waitfor {
-    while (1) {
-      waitfor {
-        TT.grabNextDJSlot();
-        hold();
-      }
-      or {
-        TT.waitforMessage("registered");
-        // we entered a new room; go round loop again to grab sj slot when avail
-      }
-    }
-  }
-  and {
-    // automatically upvote other djs. we're no hater.
-    TT.autoUpvoteLoop();
-  }
-  and {
-    TT.fillPlaylistLoop();
-  }
-}
