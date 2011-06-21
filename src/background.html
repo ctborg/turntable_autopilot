@@ -1,6 +1,8 @@
 <html>
   <head>
     <script>
+      // we need this background page just for loading local files from the extension
+
       function fetchResource(url, callback) {
         var xhr = new XMLHttpRequest();
         xhr.onreadystatechange = function() {
