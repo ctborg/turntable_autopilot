@@ -1,13 +1,18 @@
 Turntable.fm Autopilot Extension for Google Chrome
 ==================================================
 
-You enable autopilot mode in [turntable.fm](http://turntable.fm/) by going to a room and clicking on Settings > Start Autopilot.
+You enable autopilot mode in [turntable.fm](http://turntable.fm/) by going to a room and clicking on 'Settings > Start Autopilot'.
 
-When enabled, autopilot mode does the following:
+Autopilot mode does the following:
 
 - Automatically grabs any available DJ spot.
 - Adds music to your playlist based on what others are playing (uses the last.fm api).
 - Automatically upvotes songs played by others.
+
+You can turn any of these actions on or off through 'Settings > Autopilot Settings'.
+
+Settings are persisted throughout sessions.
+
 
 Installation
 ------------
