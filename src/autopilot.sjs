@@ -187,7 +187,7 @@ TT.fillPlaylistLoop = function() {
       // if we can find one on turntable.fm:
       while (similar.length) {
         var track = similar.splice(Math.floor(similar.length*Math.random()), 1)[0];
-        TT.log("Similar:"+track.artist.name+": "+track.name);
+        TT.log("Similar: "+track.artist.name+": "+track.name);
         
         // search for the track on turntable:
         var found = null;
@@ -220,51 +220,132 @@ TT.fillPlaylistLoop = function() {
 }
 
 // combined upvoting, dj spot-grabbing, playlist filling:
-function autopilotLoop() {
+function autopilotLoop(settings) {
   waitfor {
-    while (1) {
-      waitfor {
-        TT.grabNextDJSlot();
-        hold();
-      }
-      or {
-        TT.waitforMessage("registered");
-        // we entered a new room; go round loop again to grab sj slot when avail
+    if (settings.bools.autograb) {
+      while (1) {
+        waitfor {
+          TT.grabNextDJSlot();
+          hold();
+        }
+        or {
+          TT.waitforMessage("registered");
+          // we entered a new room; go round loop again to grab sj slot when avail
+        }
       }
     }
   }
   and {
     // automatically upvote other djs. we're no haterz.
-    TT.autoUpvoteLoop();
+    if (settings.bools.autovote)
+      TT.autoUpvoteLoop();
   }
   and {
     // automatically add songs similar to those being played
-    TT.fillPlaylistLoop();
+    if (settings.bools.autoqueue)
+      TT.fillPlaylistLoop();
+  }
+}
+
+//----------------------------------------------------------------------
+// Settings UI
+
+var localstorage_key = "onilabs-turntable-autopilot-settings";
+
+try {
+  var settings = JSON.parse(localStorage[localstorage_key]);
+} catch(e) {/*ignore*/}
+
+if (!settings || settings.schema != 1) 
+  settings = {
+    schema: 1,
+    bools : {
+      autograb: true,
+      autoqueue: true,
+      autovote: true
+    }
+  };
+
+var ui = 
+  ["div.settingsOverlay.modal",
+   {}, ["div##cancel.close-x"],
+   ["h1", "Autopilot Settings"],
+   ["br"],
+   ["div.field", {}, ["input##autograb", {type:"checkbox"} ],
+    " Autograb next DJ spot" ],
+   ["div.field", {}, ["input##autoqueue", {type:"checkbox"} ],
+    " Add last.fm recommendations to playlist"],
+   ["div.field", {}, ["input##autovote", {type:"checkbox"} ],
+    " Vote up all DJs"],   
+   ["div##ok.save-changes.centered-button"],
+   ["br"]
+  ];
+
+// show settings overlay; return true if we need to reload
+function doSettingsUI() {
+  var v = {};
+  turntable.showOverlay(util.buildTree(ui,v));
+  for (var b in settings.bools) v[b].checked = settings.bools[b];
+  waitfor {
+    require('apollo:dom').waitforEvent(v.ok, 'click');
+    for (var b in settings.bools) settings.bools[b] = v[b].checked;
+    localStorage[localstorage_key] = JSON.stringify(settings);
+    return true;
+  }
+  or {
+    require('apollo:dom').waitforEvent(v.cancel, 'click');
+    return false;
+  }
+  finally {
+    turntable.hideOverlay();
   }
 }
 
 //----------------------------------------------------------------------
 // Main 
 
-// wait until we're registered:
-TT.waitforMessage("registered");
+try {
+  // wait until we're registered:
+  TT.waitforMessage("registered");
 
-// insert our ui:
-var menubutton = document.createElement('div');
-menubutton.setAttribute('class', 'menuItem');
-var menu = document.getElementById('menuh');
-menu.insertBefore(menubutton, menu.firstChild.nextSibling);
+  // insert our ui:
 
-// top-level loop:
-while (1) {
-  menubutton.textContent="Start Autopilot";
-  require('apollo:dom').waitforEvent(menubutton, 'click');
-  menubutton.textContent="Stop Autopilot";
-  waitfor {
-    autopilotLoop();
-  }
-  or {
-    require('apollo:dom').waitforEvent(menubutton, 'click');
+  if (turntable.user.layouts.signedIn[0] != "div#menuh") 
+    throw "Turntable UI not found."; // sanity check failed; tt probably updated their site
+
+  turntable.user.layouts.signedIn.splice(
+    3,0,
+    ["div#toggleAutopilot.menuItem", {}, "Start autopilot"],
+    ["div#configAutopilot.menuItem", {}, "Autopilot settings"]);
+
+  turntable.user.updateDom();
+  
+  var toggleButton = document.getElementById('toggleAutopilot');
+  var settingsButton = document.getElementById('configAutopilot');
+
+  var running = false; // XXX persist this state?
+
+  while (1) {
+    waitfor {
+      toggleButton.textContent = (running ? "Stop" : "Start") + " autopilot";
+      require('apollo:dom').waitforEvent(toggleButton, 'click');
+      running = !running;
+    }
+    or {
+      while (1) {
+        require('apollo:dom').waitforEvent(settingsButton, 'click');
+        if (doSettingsUI())
+          break; // reload autopilotLoop
+      }
+    }
+    or {
+      if (running) 
+        autopilotLoop(settings);
+      hold();
+    }
   }
 }
-
+catch (e) {
+  console.log('Turntable autopilot error: '+e);
+  console.log('Please report issues to https://github.com/onilabs/turntable_autopilot/issues or alex@onilabs.com. Thanks!');
+}
