@@ -15,10 +15,15 @@ TT.log = function() {};
 //turntable.eventListeners.message.unshift(function(m) { c.log(m); });
 //turntable.eventListeners.soundstart.unshift(function(m) { c.log('playing:'+m.sID); });
 
+TT.resolveSendMessage = function(){
+  if (!TT.sendMessageFunc)
+    TT.sendMessageFunc =  /turntable\.(.*)\(\{api/.exec(turntable.randomRoom.toString())[1];
+  return TT.sendMessageFunc;
+};
 
 // make an API request; wait for reply
 TT.request = function(message) {
-  waitfor(var rv) { turntable.sendMessage(message, resume); }
+  waitfor(var rv) { turntable[TT.resolveSendMessage()](message, resume); }
   return rv;
 };
 
