@@ -9,6 +9,18 @@
 
 var TT = {};
 
+TT.set_room_mgr = function(){
+  var roommgr;
+  for(items in turntable){ if( turntable[items] && turntable[items].roomId ){ roommgr = turntable[items] } }
+  turntable.topViewController = roommgr;
+}
+
+TT.room_key = function(){
+  var the_key;
+  for(items in window){ try{ if( window[items].constructor.toString().match('upvote') ){ the_key = window[items] } } catch(e){} };
+  return the_key;
+}
+
 TT.log = function() {};
 // uncomment for debugging
 //var c = require('apollo:debug').console(); TT.log = function(m) { c.log(m);};
@@ -17,13 +29,18 @@ TT.log = function() {};
 
 TT.resolveSendMessage = function(){
   if (!TT.sendMessageFunc)
-    TT.sendMessageFunc =  /turntable\.(.*)\(\{api/.exec(turntable.randomRoom.toString())[1];
+    var the_key;
+    for(items in window){ try{ if( window[items].constructor.toString().match('upvote') ){ the_key = window[items] } } catch(e){} };
+    //TT.sendMessageFunc =  /turntable\.(.*)\(\{api/.exec(turntable.randomRoom.toString())[1];
+    TT.sendMessageFunc = the_key;
   return TT.sendMessageFunc;
 };
 
 // make an API request; wait for reply
 TT.request = function(message) {
-  waitfor(var rv) { turntable[TT.resolveSendMessage()](message, resume); }
+  //waitfor(var rv) { turntable[TT.resolveSendMessage()](message, resume); }
+  
+  waitfor( var rv ){ turntable.socket.send( JSON.stringify(message) )  }
   return rv;
 };
 
@@ -56,7 +73,7 @@ TT.grabNextDJSlot = function() {
       hold(0);
     }
     // try to grab slot:
-    TT.request({api:"room.add_dj", roomid: turntable.topViewController.roomId});
+    turntable.topViewController.roomId;
   }
 };
 
@@ -73,7 +90,7 @@ TT.mySongPlaying = function() {
 // wait until next song is playing
 // whos = 'mine'|'others'|'anyones' (default: 'anyones')
 TT.waitforNextSong = function(whos) {
-  TT.waitforEvent("soundstart", function(m) {
+  TT.waitforEvent("trackstart", function(m) {
     if (m.sID.indexOf("_") == -1 || 
         m.sID.indexOf("preview") != -1)
       return false; // not a dj'ed song (a preview or something)
@@ -87,18 +104,13 @@ TT.waitforNextSong = function(whos) {
 // upvote the current song
 TT.upvote = function() {
   if (TT.mySongPlaying()) return; // can't upvote self
-  TT.request({api:"room.vote", 
-              roomid: turntable.topViewController.roomId, 
-              val: "up", 
-              vh:$.sha1(turntable.topViewController.roomId + "up" + turntable.topViewController.currentSong._id), 
-              th:$.sha1(Math.random() + ""), 
-              ph:$.sha1(Math.random() + "")});
+  TT.request(  TT.room_key.callback('upvote') );
 };
 
 //----------------------------------------------------------------------
 // Last.fm API 
 
-var lastFMKey = "b25b959554ed76058ac220b7b2e0a026"; // XXX don't use demo key
+var lastFMKey = "f9e547eea843e5fd3cb750224b728021"; // XXX don't use demo key
 var lastFMApi = "http://ws.audioscrobbler.com/2.0/";
 
 // get similar tracks to the current artist:track from Last.fm
@@ -255,7 +267,7 @@ function autopilotLoop(settings) {
 //----------------------------------------------------------------------
 // Settings UI
 
-var localstorage_key = "onilabs-turntable-autopilot-settings";
+var localstorage_key = "buttermytoast-turntable-autopilot-settings";
 
 try {
   var settings = JSON.parse(localStorage[localstorage_key]);
@@ -289,7 +301,7 @@ var ui =
 // show settings overlay; return true if we need to reload
 function doSettingsUI() {
   var v = {};
-  turntable.showOverlay(util.buildTree(ui,v));
+  util.showOverlay(util.buildTree(ui,v));
   for (var b in settings.bools) v[b].checked = settings.bools[b];
   waitfor {
     require('apollo:dom').waitforEvent(v.ok, 'click');
@@ -302,7 +314,7 @@ function doSettingsUI() {
     return false;
   }
   finally {
-    turntable.hideOverlay();
+    util.hideOverlay();
   }
 }
 
@@ -312,7 +324,7 @@ function doSettingsUI() {
 try {
   // wait until we're registered:
   TT.waitforMessage("registered");
-
+  TT.set_room_mgr();
   // insert our ui:
 
   if (turntable.user.layouts.signedIn[0] != "div#menuh") 
@@ -352,5 +364,5 @@ try {
 }
 catch (e) {
   console.log('Turntable autopilot error: '+e);
-  console.log('Please report issues to https://github.com/onilabs/turntable_autopilot/issues or alex@onilabs.com. Thanks!');
+  console.log('Please report issues to https://github.com/ctborg/turntable_autopilot/issues or ct@googled.ca. Thanks!');
 }
